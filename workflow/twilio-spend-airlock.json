@@ -1,0 +1,144 @@
+{
+  "id": "ray9/twilio-spend-airlock",
+  "kind": "canvas",
+  "version": "1.0.0",
+  "status": "active",
+  "category": "Finance",
+  "title": "Twilio Spend Airlock",
+  "desc": "Prices the message against Twilio's own API, counts the real segments, shows a human the dollar figure, then sends under that ceiling.",
+  "description": "Takes a single SMS request and drives it end to end through Twilio with the cost known before anyone approves it: resolve the destination country, price it against Twilio's own Pricing API, compute the real billable segment count from the actual message body, read the account balance, and put a dollar figure in front of a human - then send, carrying that priced ceiling and segment count so the module refuses if either moved in between. An approver asked to sign off on 'send an SMS' cannot tell whether that costs a twentieth of a cent or thirty cents, and cannot tell that one pasted curly quote just tripled it by dropping the segment size from 160 characters to 70. This workflow makes both visible before the money is spent rather than after.",
+  "context": {
+    "to": "",
+    "message": "",
+    "max_cost_usd": 0.05,
+    "allowed_countries": []
+  },
+  "capabilities": {
+    "providers": [
+      "twilio"
+    ],
+    "allow_irreversible": true,
+    "max_spend_cents": 100
+  },
+  "nodes": [
+    {
+      "id": "price",
+      "type": "command",
+      "code": "\n# Price the message BEFORE anything is approved. This resolves the country\n# via Lookup, fetches Twilio's current price for it, and computes the real\n# segment count from the actual body — so nothing downstream is guessing.\nrun(\"twilio.price_message\", {\"to\": ctx[\"to\"], \"body\": ctx[\"message\"]})\n"
+    },
+    {
+      "id": "balance",
+      "type": "command",
+      "code": "\n# What is actually left to spend. A send that would overdraw the account\n# fails at Twilio with an unhelpful error; seeing the balance in the\n# approval turns that into a decision.\nrun(\"twilio.get_balance\", {})\n"
+    },
+    {
+      "id": "assess",
+      "type": "transform",
+      "input_from": [
+        "price",
+        "balance"
+      ],
+      "code": "\n# Turn the price into the two things an approver actually needs: what this\n# costs, and whether anything about it is unusual.\np = state[\"price\"]\nb = state[\"balance\"]\n\ncost = p[\"estimated_cost\"]\nceiling = ctx.get(\"max_cost_usd\", 0.05)\n\nemit({\n    \"to\": p[\"to\"],\n    \"country\": p[\"country\"],\n    \"text\": ctx[\"message\"],\n    \"segments\": p[\"segments\"],\n    \"encoding\": p[\"encoding\"],\n    \"characters\": p[\"characters\"],\n    \"estimated_cost\": cost,\n    \"currency\": p[\"currency\"],\n    \"balance\": b[\"balance\"],\n    \"over_ceiling\": cost > ceiling,\n    \"is_high_cost\": p[\"is_high_cost\"],\n    # Carried into the send so the module re-checks against the same numbers.\n    \"expected_max_cost_usd\": ceiling,\n    \"expected_segments\": p[\"segments\"],\n    \"allowed_countries\": ctx.get(\"allowed_countries\", []),\n    \"why_multi_segment\": (\n        \"this message is %s, so a segment holds %d characters\" % (\n            p[\"encoding\"], 70 if p[\"encoding\"] == \"UCS-2\" else 160)\n        if p[\"segments\"] > 1 else \"\"),\n})\n"
+    },
+    {
+      "id": "approve",
+      "type": "approval",
+      "input_from": "assess",
+      "code": "\n# The human sees a dollar figure, not a command name. Segment count and\n# encoding are shown because they are the reason a short message can cost\n# three times what anyone expected.\na = state[\"assess\"]\nrequire_approval({\n    \"title\": \"Send SMS to %s (%s)\" % (a[\"to\"], a[\"country\"]),\n    \"text\": a[\"text\"],\n    \"cost\": \"%.5f %s\" % (a[\"estimated_cost\"], a[\"currency\"]),\n    \"segments\": \"%d (%s, %d chars)\" % (\n        a[\"segments\"], a[\"encoding\"], a[\"characters\"]),\n    \"note\": a[\"why_multi_segment\"],\n    \"high_cost_destination\": a[\"is_high_cost\"],\n    \"account_balance\": a[\"balance\"],\n})\n"
+    },
+    {
+      "id": "send",
+      "type": "command",
+      "input_from": "approve",
+      "code": "\n# The priced ceiling and segment count ride along from step one. If the\n# destination price moved, or the body would now split differently, the\n# module refuses rather than spending more than was approved.\na = state[\"assess\"]\nrun(\"twilio.send_sms\", {\n    \"to\": a[\"to\"],\n    \"body\": a[\"text\"],\n    \"expected_max_cost_usd\": a[\"expected_max_cost_usd\"],\n    \"expected_segments\": a[\"expected_segments\"],\n    \"allowed_countries\": a[\"allowed_countries\"],\n})\n"
+    },
+    {
+      "id": "receipt",
+      "type": "transform",
+      "input_from": "send",
+      "code": "\n# What it actually cost, in terms an auditor can reconcile against the\n# Twilio invoice months later.\nm = state[\"send\"]\nemit({\n    \"sent\": True,\n    \"message_sid\": m[\"message_sid\"],\n    \"to\": m[\"to\"],\n    \"country\": m[\"country\"],\n    \"body_sha256\": m[\"body_sha256\"],\n    \"segments\": m[\"num_segments\"],\n    \"encoding\": m[\"encoding\"],\n    \"estimated_cost\": m[\"estimated_cost\"],\n    \"currency\": m[\"currency\"],\n    \"status\": m[\"status\"],\n})\n"
+    }
+  ],
+  "edges": [
+    {
+      "from": "price",
+      "to": "assess"
+    },
+    {
+      "from": "balance",
+      "to": "assess"
+    },
+    {
+      "from": "assess",
+      "to": "approve"
+    },
+    {
+      "from": "approve",
+      "to": "send"
+    },
+    {
+      "from": "send",
+      "to": "receipt"
+    }
+  ],
+  "engine_spec": {
+    "id": "ray9/twilio-spend-airlock",
+    "title": "Twilio Spend Airlock",
+    "nodes": [
+      {
+        "id": "price",
+        "type": "command",
+        "code": "\n# Price the message BEFORE anything is approved. This resolves the country\n# via Lookup, fetches Twilio's current price for it, and computes the real\n# segment count from the actual body — so nothing downstream is guessing.\nrun(\"twilio.price_message\", {\"to\": ctx[\"to\"], \"body\": ctx[\"message\"]})\n"
+      },
+      {
+        "id": "balance",
+        "type": "command",
+        "code": "\n# What is actually left to spend. A send that would overdraw the account\n# fails at Twilio with an unhelpful error; seeing the balance in the\n# approval turns that into a decision.\nrun(\"twilio.get_balance\", {})\n"
+      },
+      {
+        "id": "assess",
+        "type": "transform",
+        "input_from": [
+          "price",
+          "balance"
+        ],
+        "code": "\n# Turn the price into the two things an approver actually needs: what this\n# costs, and whether anything about it is unusual.\np = state[\"price\"]\nb = state[\"balance\"]\n\ncost = p[\"estimated_cost\"]\nceiling = ctx.get(\"max_cost_usd\", 0.05)\n\nemit({\n    \"to\": p[\"to\"],\n    \"country\": p[\"country\"],\n    \"text\": ctx[\"message\"],\n    \"segments\": p[\"segments\"],\n    \"encoding\": p[\"encoding\"],\n    \"characters\": p[\"characters\"],\n    \"estimated_cost\": cost,\n    \"currency\": p[\"currency\"],\n    \"balance\": b[\"balance\"],\n    \"over_ceiling\": cost > ceiling,\n    \"is_high_cost\": p[\"is_high_cost\"],\n    # Carried into the send so the module re-checks against the same numbers.\n    \"expected_max_cost_usd\": ceiling,\n    \"expected_segments\": p[\"segments\"],\n    \"allowed_countries\": ctx.get(\"allowed_countries\", []),\n    \"why_multi_segment\": (\n        \"this message is %s, so a segment holds %d characters\" % (\n            p[\"encoding\"], 70 if p[\"encoding\"] == \"UCS-2\" else 160)\n        if p[\"segments\"] > 1 else \"\"),\n})\n"
+      },
+      {
+        "id": "approve",
+        "type": "approval",
+        "input_from": "assess",
+        "code": "\n# The human sees a dollar figure, not a command name. Segment count and\n# encoding are shown because they are the reason a short message can cost\n# three times what anyone expected.\na = state[\"assess\"]\nrequire_approval({\n    \"title\": \"Send SMS to %s (%s)\" % (a[\"to\"], a[\"country\"]),\n    \"text\": a[\"text\"],\n    \"cost\": \"%.5f %s\" % (a[\"estimated_cost\"], a[\"currency\"]),\n    \"segments\": \"%d (%s, %d chars)\" % (\n        a[\"segments\"], a[\"encoding\"], a[\"characters\"]),\n    \"note\": a[\"why_multi_segment\"],\n    \"high_cost_destination\": a[\"is_high_cost\"],\n    \"account_balance\": a[\"balance\"],\n})\n"
+      },
+      {
+        "id": "send",
+        "type": "command",
+        "input_from": "approve",
+        "code": "\n# The priced ceiling and segment count ride along from step one. If the\n# destination price moved, or the body would now split differently, the\n# module refuses rather than spending more than was approved.\na = state[\"assess\"]\nrun(\"twilio.send_sms\", {\n    \"to\": a[\"to\"],\n    \"body\": a[\"text\"],\n    \"expected_max_cost_usd\": a[\"expected_max_cost_usd\"],\n    \"expected_segments\": a[\"expected_segments\"],\n    \"allowed_countries\": a[\"allowed_countries\"],\n})\n"
+      },
+      {
+        "id": "receipt",
+        "type": "transform",
+        "input_from": "send",
+        "code": "\n# What it actually cost, in terms an auditor can reconcile against the\n# Twilio invoice months later.\nm = state[\"send\"]\nemit({\n    \"sent\": True,\n    \"message_sid\": m[\"message_sid\"],\n    \"to\": m[\"to\"],\n    \"country\": m[\"country\"],\n    \"body_sha256\": m[\"body_sha256\"],\n    \"segments\": m[\"num_segments\"],\n    \"encoding\": m[\"encoding\"],\n    \"estimated_cost\": m[\"estimated_cost\"],\n    \"currency\": m[\"currency\"],\n    \"status\": m[\"status\"],\n})\n"
+      }
+    ],
+    "context": {
+      "to": "",
+      "message": "",
+      "max_cost_usd": 0.05,
+      "allowed_countries": []
+    },
+    "capabilities": {
+      "providers": [
+        "twilio"
+      ],
+      "allow_irreversible": true,
+      "max_spend_cents": 100
+    }
+  },
+  "module_dependency": {
+    "id": "ray9/twilio",
+    "minimum_version": "1.0.0"
+  }
+}

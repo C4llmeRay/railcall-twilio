@@ -1,0 +1,1414 @@
+{
+  "id": "ray9/twilio",
+  "name": "twilio",
+  "version": "1.0.0",
+  "provider": "twilio",
+  "credential_spec": {
+    "provider": "twilio",
+    "category": "messaging",
+    "name": "Twilio",
+    "required": [
+      "account_sid",
+      "auth_token"
+    ],
+    "optional": [
+      "api_key_sid",
+      "api_key_secret",
+      "default_from",
+      "messaging_service_sid",
+      "base_url"
+    ],
+    "shape": "dict",
+    "risk": "high",
+    "read_write": "write"
+  },
+  "description": "Governed Twilio messaging, voice, verification and telephony spend, from one credential. Thirty-eight commands: send SMS, MMS and WhatsApp; place and end calls; run Verify flows; buy, configure and release phone numbers; drive Conversations and Studio flows; and read messages, calls, recordings, usage and balance. Twenty are read-only. The other eighteen are approval-gated and twelve are flagged irreversible - here that means you cannot get the money back, not merely that you cannot unsend. Twilio bills real money per action and destination prices vary more than fiftyfold, so the headline guard is a LIVE-PRICED ceiling: every send and call is priced against Twilio's own Pricing API first, the exact billable segment count is computed from the message encoding, and expected_max_cost_usd refuses anything over. That segment maths is where the surprises live - a 161-character message bills as two segments, and a single emoji drops the limit to 70 characters, so a short message can silently cost triple. allowed_countries refuses destinations outside an approved list, which is the defence against premium-rate toll fraud. buy_phone_number is the only command that keeps charging after it runs and needs its own recurring confirmation; call recording needs a consent confirmation; and trigger_studio_flow is flagged cost_is_unbounded because a Studio flow can spend outside every guard here. Auth is one Twilio credential, API keys preferred over the account auth token, network is pinned to Twilio's own hosts, and subprocess and filesystem writes are denied.",
+  "requires": {
+    "network": [
+      "api.twilio.com",
+      "lookups.twilio.com",
+      "verify.twilio.com",
+      "pricing.twilio.com",
+      "conversations.twilio.com",
+      "studio.twilio.com",
+      "messaging.twilio.com"
+    ],
+    "subprocess": false,
+    "filesystem_writes": []
+  },
+  "commands": [
+    {
+      "id": "twilio.verify_credential",
+      "title": "Verify Twilio auth and show account status",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {},
+      "output_schema": {
+        "valid": "boolean",
+        "account_sid": "string",
+        "friendly_name": "string",
+        "status": "string",
+        "type": "string",
+        "is_trial": "boolean",
+        "auth_method": "string",
+        "date_created": "string"
+      }
+    },
+    {
+      "id": "twilio.get_balance",
+      "title": "Read the account's remaining balance",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {},
+      "output_schema": {
+        "account_sid": "string",
+        "balance": "number",
+        "currency": "string",
+        "as_of": "string"
+      }
+    },
+    {
+      "id": "twilio.get_usage",
+      "title": "Read spend to date by category",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "category": {
+          "type": "string",
+          "required": false
+        },
+        "start_date": {
+          "type": "string",
+          "required": false
+        },
+        "end_date": {
+          "type": "string",
+          "required": false
+        },
+        "limit": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "records": "array",
+        "count": "number",
+        "total_price": "number",
+        "currency": "string",
+        "period": "string"
+      }
+    },
+    {
+      "id": "twilio.price_message",
+      "title": "Price an SMS before sending it",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "to": {
+          "type": "string",
+          "required": true
+        },
+        "body": {
+          "type": "string",
+          "required": false
+        },
+        "from_number": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "to": "string",
+        "country": "string",
+        "segments": "number",
+        "encoding": "string",
+        "characters": "number",
+        "price_per_segment": "number",
+        "estimated_cost": "number",
+        "currency": "string",
+        "is_high_cost": "boolean",
+        "cheapest_carrier_price": "number"
+      }
+    },
+    {
+      "id": "twilio.price_call",
+      "title": "Price an outbound call before placing it",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "to": {
+          "type": "string",
+          "required": true
+        },
+        "minutes": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "to": "string",
+        "country": "string",
+        "price_per_minute": "number",
+        "estimated_cost": "number",
+        "currency": "string",
+        "is_high_cost": "boolean",
+        "minutes": "number"
+      }
+    },
+    {
+      "id": "twilio.lookup_number",
+      "title": "Validate a number and read its carrier and type",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "phone_number": {
+          "type": "string",
+          "required": true
+        },
+        "include_carrier": {
+          "type": "boolean",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "phone_number": "string",
+        "valid": "boolean",
+        "country_code": "string",
+        "national_format": "string",
+        "carrier_name": "string",
+        "line_type": "string",
+        "is_mobile": "boolean",
+        "billed_lookup": "boolean"
+      }
+    },
+    {
+      "id": "twilio.list_messages",
+      "title": "List sent and received messages",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "to": {
+          "type": "string",
+          "required": false
+        },
+        "from_number": {
+          "type": "string",
+          "required": false
+        },
+        "date_sent_after": {
+          "type": "string",
+          "required": false
+        },
+        "date_sent_before": {
+          "type": "string",
+          "required": false
+        },
+        "limit": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "messages": "array",
+        "count": "number",
+        "total_price": "number",
+        "currency": "string",
+        "next_page": "string"
+      }
+    },
+    {
+      "id": "twilio.get_message",
+      "title": "Read one message and its delivery status",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "message_sid": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "output_schema": {
+        "message_sid": "string",
+        "to": "string",
+        "from": "string",
+        "body": "string",
+        "body_sha256": "string",
+        "status": "string",
+        "error_code": "number",
+        "error_message": "string",
+        "num_segments": "number",
+        "price": "number",
+        "currency": "string",
+        "date_sent": "string"
+      }
+    },
+    {
+      "id": "twilio.list_calls",
+      "title": "List placed and received calls",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "to": {
+          "type": "string",
+          "required": false
+        },
+        "from_number": {
+          "type": "string",
+          "required": false
+        },
+        "status": {
+          "type": "string",
+          "required": false
+        },
+        "start_time_after": {
+          "type": "string",
+          "required": false
+        },
+        "limit": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "calls": "array",
+        "count": "number",
+        "total_price": "number",
+        "total_minutes": "number",
+        "currency": "string"
+      }
+    },
+    {
+      "id": "twilio.get_call",
+      "title": "Read one call's status, duration and cost",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "call_sid": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "output_schema": {
+        "call_sid": "string",
+        "to": "string",
+        "from": "string",
+        "status": "string",
+        "duration_seconds": "number",
+        "price": "number",
+        "currency": "string",
+        "direction": "string",
+        "answered_by": "string",
+        "start_time": "string",
+        "end_time": "string"
+      }
+    },
+    {
+      "id": "twilio.list_recordings",
+      "title": "List call recordings",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "call_sid": {
+          "type": "string",
+          "required": false
+        },
+        "date_created_after": {
+          "type": "string",
+          "required": false
+        },
+        "limit": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "recordings": "array",
+        "count": "number",
+        "total_duration": "number"
+      }
+    },
+    {
+      "id": "twilio.get_recording",
+      "title": "Read one recording's metadata and media URL",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "recording_sid": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "output_schema": {
+        "recording_sid": "string",
+        "call_sid": "string",
+        "duration_seconds": "number",
+        "channels": "number",
+        "status": "string",
+        "media_url": "string",
+        "url_requires_auth": "boolean",
+        "date_created": "string"
+      }
+    },
+    {
+      "id": "twilio.list_phone_numbers",
+      "title": "List the numbers this account owns",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "phone_number": {
+          "type": "string",
+          "required": false
+        },
+        "friendly_name": {
+          "type": "string",
+          "required": false
+        },
+        "limit": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "phone_numbers": "array",
+        "count": "number",
+        "estimated_monthly_cost": "number",
+        "currency": "string"
+      }
+    },
+    {
+      "id": "twilio.search_available_numbers",
+      "title": "Search numbers available to buy",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "country": {
+          "type": "string",
+          "required": true
+        },
+        "number_type": {
+          "type": "string",
+          "required": false
+        },
+        "area_code": {
+          "type": "string",
+          "required": false
+        },
+        "contains": {
+          "type": "string",
+          "required": false
+        },
+        "sms_enabled": {
+          "type": "boolean",
+          "required": false
+        },
+        "voice_enabled": {
+          "type": "boolean",
+          "required": false
+        },
+        "limit": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "available": "array",
+        "count": "number",
+        "country": "string",
+        "monthly_price": "number",
+        "currency": "string"
+      }
+    },
+    {
+      "id": "twilio.list_messaging_services",
+      "title": "List Messaging Services",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "limit": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "services": "array",
+        "count": "number"
+      }
+    },
+    {
+      "id": "twilio.list_conversations",
+      "title": "List Conversations",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "state": {
+          "type": "string",
+          "required": false
+        },
+        "limit": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "conversations": "array",
+        "count": "number"
+      }
+    },
+    {
+      "id": "twilio.get_conversation",
+      "title": "Read one Conversation and its participants",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "conversation_sid": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "output_schema": {
+        "conversation_sid": "string",
+        "friendly_name": "string",
+        "state": "string",
+        "participant_count": "number",
+        "participants": "array",
+        "date_created": "string"
+      }
+    },
+    {
+      "id": "twilio.list_conversation_messages",
+      "title": "Read messages in a Conversation",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "conversation_sid": {
+          "type": "string",
+          "required": true
+        },
+        "limit": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "conversation_sid": "string",
+        "messages": "array",
+        "count": "number"
+      }
+    },
+    {
+      "id": "twilio.list_studio_flows",
+      "title": "List Studio flows",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "limit": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "flows": "array",
+        "count": "number"
+      }
+    },
+    {
+      "id": "twilio.get_studio_execution",
+      "title": "Read one Studio flow execution",
+      "provider": "twilio",
+      "risk": "low",
+      "mode": "read_only",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": false,
+      "receipt_required": true,
+      "input_schema": {
+        "flow_sid": {
+          "type": "string",
+          "required": true
+        },
+        "execution_sid": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "output_schema": {
+        "flow_sid": "string",
+        "execution_sid": "string",
+        "status": "string",
+        "contact_channel_address": "string",
+        "date_created": "string",
+        "date_updated": "string"
+      }
+    },
+    {
+      "id": "twilio.send_sms",
+      "title": "Send an SMS or MMS",
+      "provider": "twilio",
+      "risk": "high",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "irreversible": true,
+      "input_schema": {
+        "to": {
+          "type": "string",
+          "required": true
+        },
+        "body": {
+          "type": "string",
+          "required": true
+        },
+        "from_number": {
+          "type": "string",
+          "required": false
+        },
+        "messaging_service_sid": {
+          "type": "string",
+          "required": false
+        },
+        "media_urls": {
+          "type": "array",
+          "required": false
+        },
+        "expected_max_cost_usd": {
+          "type": "number",
+          "required": false
+        },
+        "expected_segments": {
+          "type": "number",
+          "required": false
+        },
+        "allowed_countries": {
+          "type": "array",
+          "required": false
+        },
+        "status_callback": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "message_sid": "string",
+        "to": "string",
+        "from": "string",
+        "body": "string",
+        "body_sha256": "string",
+        "status": "string",
+        "num_segments": "number",
+        "encoding": "string",
+        "estimated_cost": "number",
+        "price_per_segment": "number",
+        "currency": "string",
+        "country": "string"
+      }
+    },
+    {
+      "id": "twilio.send_whatsapp",
+      "title": "Send a WhatsApp message",
+      "provider": "twilio",
+      "risk": "high",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "irreversible": true,
+      "input_schema": {
+        "to": {
+          "type": "string",
+          "required": true
+        },
+        "body": {
+          "type": "string",
+          "required": true
+        },
+        "from_number": {
+          "type": "string",
+          "required": false
+        },
+        "media_urls": {
+          "type": "array",
+          "required": false
+        },
+        "content_sid": {
+          "type": "string",
+          "required": false
+        },
+        "content_variables": {
+          "type": "object",
+          "required": false
+        },
+        "expected_max_cost_usd": {
+          "type": "number",
+          "required": false
+        },
+        "allowed_countries": {
+          "type": "array",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "message_sid": "string",
+        "to": "string",
+        "from": "string",
+        "body": "string",
+        "body_sha256": "string",
+        "status": "string",
+        "estimated_cost": "number",
+        "currency": "string",
+        "country": "string",
+        "used_template": "boolean"
+      }
+    },
+    {
+      "id": "twilio.delete_message_record",
+      "title": "Delete a message from Twilio's logs",
+      "provider": "twilio",
+      "risk": "high",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "irreversible": true,
+      "input_schema": {
+        "message_sid": {
+          "type": "string",
+          "required": true
+        },
+        "expected_body_sha256": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "message_sid": "string",
+        "deleted": "boolean",
+        "was_to": "string",
+        "was_body_sha256": "string",
+        "was_price": "number"
+      }
+    },
+    {
+      "id": "twilio.place_call",
+      "title": "Place an outbound call",
+      "provider": "twilio",
+      "risk": "high",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "irreversible": true,
+      "input_schema": {
+        "to": {
+          "type": "string",
+          "required": true
+        },
+        "from_number": {
+          "type": "string",
+          "required": false
+        },
+        "twiml": {
+          "type": "string",
+          "required": false
+        },
+        "url": {
+          "type": "string",
+          "required": false
+        },
+        "expected_max_cost_usd": {
+          "type": "number",
+          "required": false
+        },
+        "expected_minutes": {
+          "type": "number",
+          "required": false
+        },
+        "allowed_countries": {
+          "type": "array",
+          "required": false
+        },
+        "record": {
+          "type": "boolean",
+          "required": false
+        },
+        "confirm_recording_consent": {
+          "type": "boolean",
+          "required": false
+        },
+        "timeout_seconds": {
+          "type": "number",
+          "required": false
+        },
+        "machine_detection": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "call_sid": "string",
+        "to": "string",
+        "from": "string",
+        "status": "string",
+        "price_per_minute": "number",
+        "estimated_cost": "number",
+        "currency": "string",
+        "country": "string",
+        "recording_enabled": "boolean"
+      }
+    },
+    {
+      "id": "twilio.hangup_call",
+      "title": "End an in-progress call",
+      "provider": "twilio",
+      "risk": "medium",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {
+        "call_sid": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "output_schema": {
+        "call_sid": "string",
+        "status": "string",
+        "was_status": "string",
+        "duration_seconds": "number",
+        "price": "number"
+      }
+    },
+    {
+      "id": "twilio.delete_recording",
+      "title": "Delete a call recording permanently",
+      "provider": "twilio",
+      "risk": "high",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "irreversible": true,
+      "input_schema": {
+        "recording_sid": {
+          "type": "string",
+          "required": true
+        },
+        "expected_call_sid": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "recording_sid": "string",
+        "deleted": "boolean",
+        "was_call_sid": "string",
+        "was_duration_seconds": "number"
+      }
+    },
+    {
+      "id": "twilio.buy_phone_number",
+      "title": "Buy a phone number (recurring monthly charge)",
+      "provider": "twilio",
+      "risk": "high",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "irreversible": true,
+      "input_schema": {
+        "phone_number": {
+          "type": "string",
+          "required": false
+        },
+        "country": {
+          "type": "string",
+          "required": false
+        },
+        "area_code": {
+          "type": "string",
+          "required": false
+        },
+        "friendly_name": {
+          "type": "string",
+          "required": false
+        },
+        "sms_url": {
+          "type": "string",
+          "required": false
+        },
+        "voice_url": {
+          "type": "string",
+          "required": false
+        },
+        "expected_monthly_cost_usd": {
+          "type": "number",
+          "required": false
+        },
+        "confirm_recurring_charge": {
+          "type": "boolean",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "phone_number_sid": "string",
+        "phone_number": "string",
+        "friendly_name": "string",
+        "country": "string",
+        "monthly_cost": "number",
+        "currency": "string",
+        "capabilities": "object",
+        "recurring": "boolean"
+      }
+    },
+    {
+      "id": "twilio.release_phone_number",
+      "title": "Release a number back to Twilio's pool",
+      "provider": "twilio",
+      "risk": "high",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "irreversible": true,
+      "input_schema": {
+        "phone_number_sid": {
+          "type": "string",
+          "required": true
+        },
+        "expected_phone_number": {
+          "type": "string",
+          "required": false
+        },
+        "confirm_unrecoverable": {
+          "type": "boolean",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "phone_number_sid": "string",
+        "phone_number": "string",
+        "released": "boolean",
+        "reclaimable": "boolean",
+        "monthly_cost_ended": "number"
+      }
+    },
+    {
+      "id": "twilio.update_phone_number",
+      "title": "Change a number's webhooks or friendly name",
+      "provider": "twilio",
+      "risk": "medium",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {
+        "phone_number_sid": {
+          "type": "string",
+          "required": true
+        },
+        "friendly_name": {
+          "type": "string",
+          "required": false
+        },
+        "sms_url": {
+          "type": "string",
+          "required": false
+        },
+        "voice_url": {
+          "type": "string",
+          "required": false
+        },
+        "status_callback": {
+          "type": "string",
+          "required": false
+        },
+        "expected_phone_number": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "phone_number_sid": "string",
+        "phone_number": "string",
+        "updated_fields": "array",
+        "friendly_name": "string"
+      }
+    },
+    {
+      "id": "twilio.start_verification",
+      "title": "Send a verification code (real SMS or call)",
+      "provider": "twilio",
+      "risk": "high",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "irreversible": true,
+      "input_schema": {
+        "service_sid": {
+          "type": "string",
+          "required": true
+        },
+        "to": {
+          "type": "string",
+          "required": true
+        },
+        "channel": {
+          "type": "string",
+          "required": false
+        },
+        "expected_max_cost_usd": {
+          "type": "number",
+          "required": false
+        },
+        "allowed_countries": {
+          "type": "array",
+          "required": false
+        },
+        "locale": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "verification_sid": "string",
+        "to": "string",
+        "channel": "string",
+        "status": "string",
+        "country": "string",
+        "estimated_cost": "number",
+        "currency": "string",
+        "valid": "boolean"
+      }
+    },
+    {
+      "id": "twilio.check_verification",
+      "title": "Check a verification code",
+      "provider": "twilio",
+      "risk": "medium",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {
+        "service_sid": {
+          "type": "string",
+          "required": true
+        },
+        "to": {
+          "type": "string",
+          "required": true
+        },
+        "code": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "output_schema": {
+        "verification_sid": "string",
+        "to": "string",
+        "status": "string",
+        "valid": "boolean"
+      }
+    },
+    {
+      "id": "twilio.create_conversation",
+      "title": "Create a Conversation",
+      "provider": "twilio",
+      "risk": "medium",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {
+        "friendly_name": {
+          "type": "string",
+          "required": false
+        },
+        "unique_name": {
+          "type": "string",
+          "required": false
+        },
+        "attributes": {
+          "type": "object",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "conversation_sid": "string",
+        "friendly_name": "string",
+        "unique_name": "string",
+        "state": "string",
+        "date_created": "string"
+      }
+    },
+    {
+      "id": "twilio.send_conversation_message",
+      "title": "Post a message into a Conversation",
+      "provider": "twilio",
+      "risk": "high",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "irreversible": true,
+      "input_schema": {
+        "conversation_sid": {
+          "type": "string",
+          "required": true
+        },
+        "body": {
+          "type": "string",
+          "required": true
+        },
+        "author": {
+          "type": "string",
+          "required": false
+        },
+        "media_sid": {
+          "type": "string",
+          "required": false
+        },
+        "expected_participant_count": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "conversation_sid": "string",
+        "message_sid": "string",
+        "body": "string",
+        "body_sha256": "string",
+        "author": "string",
+        "index": "number",
+        "participant_count": "number"
+      }
+    },
+    {
+      "id": "twilio.add_conversation_participant",
+      "title": "Add a participant to a Conversation",
+      "provider": "twilio",
+      "risk": "high",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "irreversible": true,
+      "input_schema": {
+        "conversation_sid": {
+          "type": "string",
+          "required": true
+        },
+        "phone_number": {
+          "type": "string",
+          "required": false
+        },
+        "identity": {
+          "type": "string",
+          "required": false
+        },
+        "proxy_number": {
+          "type": "string",
+          "required": false
+        },
+        "expected_participant_count": {
+          "type": "number",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "conversation_sid": "string",
+        "participant_sid": "string",
+        "phone_number": "string",
+        "identity": "string",
+        "participant_count_before": "number",
+        "participant_count_after": "number",
+        "is_sms_participant": "boolean"
+      }
+    },
+    {
+      "id": "twilio.remove_conversation_participant",
+      "title": "Remove a participant",
+      "provider": "twilio",
+      "risk": "medium",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {
+        "conversation_sid": {
+          "type": "string",
+          "required": true
+        },
+        "participant_sid": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "output_schema": {
+        "conversation_sid": "string",
+        "participant_sid": "string",
+        "removed": "boolean",
+        "participant_count_after": "number"
+      }
+    },
+    {
+      "id": "twilio.delete_conversation",
+      "title": "Delete a Conversation and its messages",
+      "provider": "twilio",
+      "risk": "high",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "irreversible": true,
+      "input_schema": {
+        "conversation_sid": {
+          "type": "string",
+          "required": true
+        },
+        "expected_friendly_name": {
+          "type": "string",
+          "required": false
+        },
+        "confirm_deletes_messages": {
+          "type": "boolean",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "conversation_sid": "string",
+        "deleted": "boolean",
+        "was_friendly_name": "string",
+        "messages_destroyed": "number"
+      }
+    },
+    {
+      "id": "twilio.trigger_studio_flow",
+      "title": "Start a Studio flow execution",
+      "provider": "twilio",
+      "risk": "high",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "irreversible": true,
+      "input_schema": {
+        "flow_sid": {
+          "type": "string",
+          "required": true
+        },
+        "to": {
+          "type": "string",
+          "required": true
+        },
+        "from_number": {
+          "type": "string",
+          "required": false
+        },
+        "parameters": {
+          "type": "object",
+          "required": false
+        },
+        "confirm_may_spend_externally": {
+          "type": "boolean",
+          "required": false
+        },
+        "allowed_countries": {
+          "type": "array",
+          "required": false
+        }
+      },
+      "output_schema": {
+        "flow_sid": "string",
+        "execution_sid": "string",
+        "to": "string",
+        "from": "string",
+        "status": "string",
+        "country": "string",
+        "cost_is_unbounded": "boolean"
+      }
+    },
+    {
+      "id": "twilio.stop_studio_execution",
+      "title": "Stop a running Studio execution",
+      "provider": "twilio",
+      "risk": "medium",
+      "mode": "write_requires_approval",
+      "requires": [
+        "TWILIO_AUTH"
+      ],
+      "preview": true,
+      "receipt_required": true,
+      "input_schema": {
+        "flow_sid": {
+          "type": "string",
+          "required": true
+        },
+        "execution_sid": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "output_schema": {
+        "flow_sid": "string",
+        "execution_sid": "string",
+        "status": "string",
+        "was_status": "string"
+      }
+    }
+  ],
+  "license_required": false,
+  "manifest_version": 2,
+  "publisher_pubkey": "83454016a786db1218de8f90efb3ec26e23162686f9624ac23079be09b0aa1e6"
+}

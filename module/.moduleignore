@@ -1,0 +1,15 @@
+# The companion workflow is a SEPARATE marketplace listing
+# (ray9/twilio-spend-airlock). Shipping it inside the module bundle bloats
+# the download and makes the signature churn whenever the workflow changes,
+# for no benefit to a buyer of the module.
+workflow/
+
+# Listing copy — belongs to the marketplace record (passed via --description
+# at publish time), not to the code buyers install.
+LISTING.md
+
+# Byte-compiled handler cache. Never part of the signed tree — it is derived
+# from handler.py, differs per Python version, and would break the tree hash
+# on any machine that imported the module before the bundle was assembled.
+__pycache__/
+*.py[cod]

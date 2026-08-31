@@ -1,0 +1,24 @@
+# Nothing in this repo should ever carry a credential or a key.
+*.key
+*.pem
+*seed*.json
+marketplace_publisher.json
+.railcall/
+.env
+.env.*
+
+# A Twilio auth token is a bearer credential. These are the shapes that have
+# historically leaked one into a commit.
+*token*.txt
+twilio_token*
+AC*
+
+__pycache__/
+*.py[cod]
+.DS_Store
+*.bak
+*.log
+
+# Demo/marketing material is not part of the module.
+DEMO_SCRIPT.md
+docs/DEMO_SCRIPT.md
