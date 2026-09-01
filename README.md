@@ -137,6 +137,7 @@ tests/
   test_guards.py        51 adversarial scenarios, incl. the segment arithmetic
   test_docs.py          docs, counts and marketplace bounds vs. the manifest
   test_workflow.py      validates AND executes the companion workflow
+  test_credential.py    the vault script stores what the handler reads
 workflow/               its own marketplace listing, not part of the bundle
 LISTING.md              marketplace copy, passed via --description at publish
 ```
@@ -150,6 +151,7 @@ python tests/test_schema.py      # 38/38 commands
 python tests/test_guards.py      # 51/51 refusal scenarios
 python tests/test_docs.py
 python tests/test_workflow.py
+python tests/test_credential.py
 python tools/stage_bundle.py
 ```
 

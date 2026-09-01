@@ -8,6 +8,7 @@ python tests/test_schema.py     # 38/38 commands, output_schema conformance
 python tests/test_guards.py     # 51/51 refusal scenarios
 python tests/test_docs.py       # docs, counts and marketplace bounds
 python tests/test_workflow.py   # validates AND executes the workflow
+python tests/test_credential.py # 11/11 — the vault script stores what the handler reads
 ```
 
 ---
@@ -78,6 +79,29 @@ keys for arrays, auth token never in an error, errors naming the path rather
 than the full URL, error 21408 glossed as a *region* setting, 21219 glossed
 as a trial account, 429 retried, **5xx never retried**.
 
+## 3b. The credential script — `test_credential.py`
+
+`tools/save_credential.py` shipped as an unmodified copy of the Slack
+module's: it prompted for a `bot_token` starting with `xoxb-` and wrote
+`bot_token` / `default_channel`, while the handler reads `account_sid`,
+`auth_token` and `api_key_sid`. It would have refused every real Twilio
+credential.
+
+Nothing caught it because the script is interactive, so no suite touched it.
+"Fully tested" had quietly come to mean "every part a test could reach". The
+fix is a suite that reaches it: the prompts are driven with scripted input,
+so the flow runs headless.
+
+The load-bearing assertion is that **the fields written are exactly those
+`module.json` declares** — that one fails on any script copied from another
+provider, whatever else looks right. Nine of the eleven scenarios fail
+against the original.
+
+The rest cover refusals worth having: half an API key pair (which would
+silently fall back to the auth token, defeating the point of making a key),
+an `SK…` SID pasted into the account slot, the account SID pasted in twice,
+a non-E.164 `default_from`, and that no secret is ever printed.
+
 ## 4. Live acceptance — free by default
 
 ```bash
@@ -142,6 +166,7 @@ below.
 - [ ] `python tests/test_guards.py` — 51/51, 0 failed
 - [ ] `python tests/test_docs.py`
 - [ ] `python tests/test_workflow.py`
+- [ ] `python tests/test_credential.py` — 11/11
 - [ ] `python tools/live_acceptance.py` — the free pass, at minimum
 - [ ] `python tools/stage_bundle.py --verify` — verifies, no drift
 - [ ] no credential anywhere in `git log -p`
