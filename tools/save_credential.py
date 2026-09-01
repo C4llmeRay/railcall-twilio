@@ -22,11 +22,11 @@ the clipboard to the vault without stopping anywhere in between.
 
 WHY NOT THE STUDIO UI. Studio validates a credential's provider against a
 vault allowlist built from the built-in providers plus the `credential_spec`
-of every *loaded* module. `ray9/twilio` declares `license_required: true` and
-has not been published, so the loader refuses it and `twilio` never reaches
-that allowlist — Studio would reject the save. Writing the entry directly is
-the correct move until the module is published and licensed; after that,
-Studio manages it normally.
+of every *loaded* module. That works once `ray9/twilio` is installed from the
+marketplace — it is published free and `license_required: false`, so Studio
+manages the credential normally from then on. This script is for the case
+before that: developing against the source tree, where the module is not
+installed and `twilio` has not reached the allowlist yet.
 """
 import argparse
 import getpass
