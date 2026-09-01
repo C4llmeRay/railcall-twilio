@@ -9,6 +9,7 @@ python tests/test_guards.py     # 51/51 refusal scenarios
 python tests/test_docs.py       # docs, counts and marketplace bounds
 python tests/test_workflow.py   # validates AND executes the workflow
 python tests/test_credential.py # 11/11 — the vault script stores what the handler reads
+python tests/test_gsm.py        # 20/20 — the GSM 03.38 table vs the standard
 ```
 
 ---
@@ -102,6 +103,43 @@ silently fall back to the auth token, defeating the point of making a key),
 an `SK…` SID pasted into the account slot, the account SID pasted in twice,
 a non-E.164 `default_from`, and that no secret is ever printed.
 
+## 3c. With no Twilio account at all — `tools/offline_probe.py`
+
+```bash
+python tools/offline_probe.py     # no account, no credential, no network
+python tests/test_gsm.py          # the GSM 03.38 table, audited independently
+```
+
+Twilio has no public sandbox, so signing up is unavoidable for anything
+priced. But **22 of the 38 commands refuse before they ever reach the
+network**, and those decisions are real: a refusal here is the same refusal a
+live run produces.
+
+`offline_probe.py` installs a transport that *raises* if anything tries to
+send, so it cannot make a request even by accident, and any command that
+tries is reported rather than quietly passing. It covers number shapes, the
+argument checks, all the confirmation flags, and the segment arithmetic —
+**25 checks, 18/38 commands**.
+
+Two guards deliberately read the resource first, so the refusal can name what
+is about to be destroyed ("+14155550100 goes back to Twilio's pool" rather
+than an opaque `PN…` SID). Those get a canned GET from a fixture; writes are
+still refused outright.
+
+`test_gsm.py` audits the alphabet against GSM 03.38 transcribed from the
+standard. This is separate from the arithmetic in `test_guards.py` on purpose:
+wrong arithmetic gives obviously silly numbers, while a **wrong alphabet gives
+a confidently wrong one**. One character misfiled as GSM-7 makes the module
+price a UCS-2 message at 160 per segment instead of 70 — and it *under*-counts,
+so the ceiling passes a send costing more than was approved. Live testing
+would not find it either: pricing a destination confirms the price per
+segment, not the segment count, and the count is the half computed here.
+
+What the offline pass can say nothing about: live pricing, geo permissions
+(21408), trial behaviour (21219), carrier filtering (30007), and the 20
+commands that must call Twilio to decide anything. The probe prints that list
+every run.
+
 ## 4. Live acceptance — free by default
 
 ```bash
@@ -167,6 +205,8 @@ below.
 - [ ] `python tests/test_docs.py`
 - [ ] `python tests/test_workflow.py`
 - [ ] `python tests/test_credential.py` — 11/11
+- [ ] `python tests/test_gsm.py` — 20/20
+- [ ] `python tools/offline_probe.py` — 25 checks, needs no account
 - [ ] `python tools/live_acceptance.py` — the free pass, at minimum
 - [ ] `python tools/stage_bundle.py --verify` — verifies, no drift
 - [ ] no credential anywhere in `git log -p`
