@@ -66,6 +66,29 @@ PASS, FAIL, SKIP = "ok  ", "FAIL", "skip"
 results = []
 
 
+# Every command name this run actually invoked. A refusal counts: the command
+# ran and declined. What does NOT count is a command nobody called at all —
+# a pass count measures what ran, not what exists, and reading the first as
+# the second overstates the module's state.
+EXECUTED = set()
+
+
+def coverage():
+    """Which declared commands never ran? Report it rather than be asked."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(here, os.pardir, "module", "module.json")
+    declared = [c["id"].split(".", 1)[1]
+                for c in json.load(open(path, encoding="utf-8"))["commands"]]
+    missed = [c for c in declared if c not in EXECUTED]
+    print()
+    print("COVERAGE: %d/%d commands executed against the live API"
+          % (len(declared) - len(missed), len(declared)))
+    if missed:
+        print("  never executed: %s" % ", ".join(missed))
+        print("  a passing run does NOT mean these work — nothing called them.")
+    return missed
+
+
 def step(label, fn, optional=False):
     try:
         out = fn()
@@ -117,6 +140,7 @@ def main():
     ns = load_handler()
 
     def call(name, inputs):
+        EXECUTED.add(name)
         out, _err = ns["twilio_" + name](inputs, None)
         return out
 
@@ -286,6 +310,7 @@ def report():
         print("  %s  %s%s" % (status, label, ("  — " + note) if note else ""))
     print()
     print("%d passed, %d failed, %d skipped" % (ok, bad, skipped))
+    coverage()
     if bad:
         print("\nDo not publish with live failures. If pricing failed, check "
               "the account is not restricted; if a send failed, check geo "

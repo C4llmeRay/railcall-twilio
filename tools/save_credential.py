@@ -1,32 +1,40 @@
 # -*- coding: utf-8 -*-
-"""Save the Twilio bot token into the station vault, without it touching a
-shell history, a command line, or a chat transcript.
+"""Save the Twilio credential into the station vault, without any secret
+touching a shell history, a command line, or a chat transcript.
 
     python tools/save_credential.py            # prompts, writes, verifies
     python tools/save_credential.py --check     # just report what is stored
     python tools/save_credential.py --remove    # delete the twilio entry
 
-The token is read with getpass (no echo), validated, written to
+Secrets are read with getpass (no echo). Non-secret identifiers — the account
+SID, the API key SID, the sending number — are read normally, because hiding
+a value that is not secret only makes it harder to spot a typo.
+
+Everything is written to
 ~/.railcall/station/.railcall_workspace/credentials.local.json in the same
 shape Studio's Integrations tab produces, and the file is chmod 0600.
-Nothing prints the token — confirmations show `xoxb-12…9f2e` only.
+Nothing prints a secret — confirmations show `……9f2e` only.
 
-WHY THIS MATTERS MORE FOR SLACK THAN FOR MOST PROVIDERS. A bot token is a
-bearer credential with no second factor and no per-call confirmation: anyone
-holding it can post as your bot, in your workspace, to every channel the bot
-is in, until someone notices and reinstalls the app. It is also unusually
-easy to leak, because the natural way to test one is to paste it into a curl
-command — which lands it in shell history, in the terminal scrollback, and
-in any transcript of the session. This script exists so the token goes from
-the clipboard to the vault without stopping anywhere in between.
+WHY THIS MATTERS MORE FOR TWILIO THAN FOR MOST PROVIDERS. A leaked Slack
+token embarrasses you. A leaked Twilio credential *spends your money*, and
+the people who steal them have a business model: they send to premium-rate
+ranges they collect revenue from, at machine speed, until someone notices the
+balance. The credential is the whole authentication story — there is no
+second factor on an API call — so the only real controls are keeping it out
+of every log and using a key you can revoke on its own.
+
+WHY THIS FILE EXISTS AT ALL. The natural way to test a Twilio credential is
+to paste it into a curl command, which lands it in shell history, terminal
+scrollback, and any transcript of the session. This script exists so it goes
+from the clipboard to the vault without stopping anywhere in between.
 
 WHY NOT THE STUDIO UI. Studio validates a credential's provider against a
 vault allowlist built from the built-in providers plus the `credential_spec`
-of every *loaded* module. `ray9/twilio` declares `license_required: true` and
-has not been published, so the loader refuses it and `twilio` never reaches
-that allowlist — Studio would reject the save. Writing the entry directly is
-the correct move until the module is published and licensed; after that,
-Studio manages it normally.
+of every *loaded* module. That works once `ray9/twilio` is installed from the
+marketplace — it is published free and `license_required: false`, so Studio
+manages the credential normally from then on. This script is for the case
+before that: developing against the source tree, where the module is not
+installed and `twilio` has not reached the allowlist yet.
 """
 import argparse
 import getpass
@@ -40,25 +48,32 @@ WS = os.path.expanduser("~/.railcall/station/.railcall_workspace")
 VAULT = os.path.join(WS, "credentials.local.json")
 PROVIDER = "twilio"
 
-# xoxb- then Twilio's dash-separated numeric/alnum sections. Twilio has changed
-# the exact section count over the years, so this deliberately checks the
-# prefix and a plausible body rather than pinning an exact shape that a future
-# token format would fail.
-TOKEN_RE = re.compile(r"^xoxb-[0-9A-Za-z-]{20,}$")
+# Twilio SIDs are a two-letter type prefix followed by 32 hex characters.
+# The prefix is the type: AC an account, SK an API key, MG a messaging
+# service. Checking it here turns "pasted the wrong SID" — which are all the
+# same length and shape — into a message that names which one was expected.
+SID_RE = re.compile(r"^[A-Z]{2}[0-9a-fA-F]{32}$")
+E164_RE = re.compile(r"^\+[1-9]\d{6,14}$")
 
-# The prefixes people actually paste by mistake, and what each one really is.
-WRONG_TOKEN = {
-    "xoxp-": "a USER token — it acts as a human, not a bot. This module is "
-             "bot-token only by design.",
-    "xapp-": "an APP-LEVEL token — for Socket Mode, cannot call the Web API.",
-    "xoxe-": "a REFRESH token, not an access token.",
-    "xoxa-": "a legacy workspace token.",
-    "xoxs-": "a session cookie token — never use one for automation.",
+SID_KINDS = {
+    "AC": "an Account SID",
+    "SK": "an API Key SID",
+    "MG": "a Messaging Service SID",
+    "PN": "a phone number SID",
+    "SM": "a message SID",
+    "CA": "a call SID",
+    "FW": "a Studio flow SID",
+    "VA": "a Verify service SID",
 }
 
 
-def mask(tok):
-    return tok[:9] + "…" + tok[-4:] if len(tok) > 20 else "…"
+def mask(secret):
+    """Show enough to recognise it, never enough to use it."""
+    if not secret:
+        return "(none)"
+    if len(secret) <= 8:
+        return "…"
+    return "…" + secret[-4:]
 
 
 def load():
@@ -84,6 +99,21 @@ def save(data):
         pass
 
 
+def check_sid(value, want_prefix, label):
+    """Return None if fine, else an actionable complaint."""
+    if not SID_RE.match(value):
+        return ("%s should be %r followed by 32 hex characters (34 total) — "
+                "got %d characters." % (label, want_prefix, len(value)))
+    got = value[:2].upper()
+    if got != want_prefix:
+        kind = SID_KINDS.get(got)
+        return ("%s should start with %r, but this starts with %r%s. They are "
+                "all 34 characters, so they are easy to mix up."
+                % (label, want_prefix, got,
+                   " — that is %s" % kind if kind else ""))
+    return None
+
+
 def check():
     data = load()
     entry = data.get(PROVIDER)
@@ -95,16 +125,34 @@ def check():
     creds = entry.get("credentials") or {}
     cid = entry.get("default") or (sorted(creds)[0] if creds else None)
     fields = ((creds.get(cid) or {}).get("fields") or {})
-    tok = str(fields.get("bot_token") or "")
+
     print("twilio credential present")
     print("  vault:      %s" % VAULT)
     print("  cred id:    %s" % cid)
-    print("  bot_token:  %s  (%d chars, %s)"
-          % (mask(tok), len(tok),
-             "well-formed" if TOKEN_RE.match(tok) else "MALFORMED"))
-    for k in ("base_url", "default_channel"):
+
+    acct = str(fields.get("account_sid") or "")
+    problem = check_sid(acct, "AC", "account_sid") if acct else "not set"
+    print("  account_sid:  %s  (%s)"
+          % (acct or "(none)", problem or "well-formed"))
+
+    key_sid = str(fields.get("api_key_sid") or "")
+    key_secret = str(fields.get("api_key_secret") or "")
+    print("  auth_token:   %s" % mask(str(fields.get("auth_token") or "")))
+    print("  api_key_sid:  %s" % (key_sid or "(none)"))
+    print("  api_key_secret: %s" % mask(key_secret))
+
+    if bool(key_sid) != bool(key_secret):
+        print("  WARNING: half an API key pair is stored. The handler refuses "
+              "this rather than silently falling back to the auth token.")
+    elif key_sid:
+        print("  -> will authenticate with the API KEY (scoped, revocable)")
+    else:
+        print("  -> will authenticate with the ACCOUNT AUTH TOKEN. An API key "
+              "is scoped and individually revocable; consider one.")
+
+    for k in ("default_from", "messaging_service_sid", "base_url"):
         if fields.get(k):
-            print("  %-11s %s" % (k + ":", fields[k]))
+            print("  %-16s %s" % (k + ":", fields[k]))
     return 0
 
 
@@ -119,36 +167,100 @@ def remove():
     return 0
 
 
+def ask_sid(label, want_prefix, required, hint):
+    """Prompt for a SID until it is well-formed, or blank when optional."""
+    while True:
+        value = input("  %s%s: " % (label, "" if required else " (optional)")
+                      ).strip()
+        if not value:
+            if required:
+                print("     %s is required. %s" % (label, hint))
+                continue
+            return ""
+        problem = check_sid(value, want_prefix, label)
+        if problem:
+            print("     %s" % problem)
+            continue
+        return value
+
+
 def prompt_and_store():
     os.makedirs(WS, exist_ok=True)
 
-    print("Paste the Bot User OAuth Token from your Twilio app's")
-    print("  OAuth & Permissions page. It starts with xoxb-.")
-    print("(input is hidden and is never echoed or logged)")
-    tok = getpass.getpass("  bot_token: ").strip()
+    print("Twilio Console -> dashboard for the Account SID; Account -> API keys")
+    print("& tokens to create an API key.")
+    print("(secrets are hidden as you type and are never echoed or logged)")
+    print()
 
-    if not tok:
-        print("\nNothing entered — aborted.")
+    account_sid = ask_sid(
+        "account_sid", "AC", True,
+        "It is on the Console dashboard and starts with AC.")
+
+    print()
+    print("  The auth token is the MASTER credential for the whole account:")
+    print("  it can rotate itself, reach every subaccount, and cannot be")
+    print("  revoked without breaking everything else using it. It is still")
+    print("  required here, but an API key below is what will be used.")
+    auth_token = getpass.getpass("  auth_token: ").strip()
+    if not auth_token:
+        print("\nNothing entered — auth_token is required. Aborted.")
         return 1
-    if not tok.startswith("xoxb-"):
-        wrong = WRONG_TOKEN.get(tok[:5])
-        print("\nThat is not a bot token. It starts with %r, which is %s"
-              % (tok[:5], wrong or "not a token shape Twilio issues."))
-        print("Look for 'Bot User OAuth Token' — not 'User OAuth Token'.")
+    if auth_token == account_sid:
+        print("\nThat is the account SID again, not the auth token. The token "
+              "sits next to it in the Console, behind a 'show' toggle.")
         return 1
-    if not TOKEN_RE.match(tok):
-        print("\nThat starts with xoxb- but does not look complete "
-              "(%d chars). A truncated paste is the usual cause." % len(tok))
+    if SID_RE.match(auth_token) and auth_token[:2].upper() in SID_KINDS:
+        print("\nThat looks like %s, not the auth token — the auth token is "
+              "32 hex characters with NO two-letter prefix."
+              % SID_KINDS[auth_token[:2].upper()])
         return 1
 
-    channel = input("  default_channel (optional, e.g. C024BE91L): ").strip()
-    base = input("  base_url (optional, blank = https://twilio.com/api): ").strip()
+    print()
+    print("  An API key (SK…) is scoped and individually revocable. Leave")
+    print("  blank to use the auth token, or paste a key pair to prefer it.")
+    key_sid = ask_sid("api_key_sid", "SK", False,
+                      "Console -> Account -> API keys & tokens.")
+    key_secret = ""
+    if key_sid:
+        key_secret = getpass.getpass("  api_key_secret: ").strip()
+        if not key_secret:
+            # Refuse rather than store half a pair. A key SID with no secret
+            # would quietly fall back to the auth token, which is the exact
+            # opposite of what someone configuring a key intended.
+            print("\nAn api_key_sid with no secret is refused: it would "
+                  "silently fall back to the auth token, defeating the point "
+                  "of creating a key. The secret is shown ONCE, at creation — "
+                  "if it is lost, create a new key.")
+            return 1
+        if key_secret == auth_token:
+            print("\nThe API key secret is the same as the auth token, which "
+                  "means one of the two was pasted twice.")
+            return 1
 
-    fields = {"bot_token": tok}
-    if channel:
-        fields["default_channel"] = channel
-    if base:
-        fields["base_url"] = base.rstrip("/")
+    print()
+    default_from = ""
+    while True:
+        default_from = input("  default_from (optional, e.g. +14155550100): "
+                             ).strip()
+        if not default_from:
+            break
+        if not E164_RE.match(default_from):
+            print("     Must be E.164: '+', country code, digits — no spaces, "
+                  "dashes or parentheses, and no leading zero.")
+            continue
+        break
+
+    msg_service = ask_sid("messaging_service_sid", "MG", False,
+                          "Console -> Messaging -> Services.")
+
+    fields = {"account_sid": account_sid, "auth_token": auth_token}
+    if key_sid:
+        fields["api_key_sid"] = key_sid
+        fields["api_key_secret"] = key_secret
+    if default_from:
+        fields["default_from"] = default_from
+    if msg_service:
+        fields["messaging_service_sid"] = msg_service
 
     data = load()
     cid = "twilio-default"
@@ -157,7 +269,7 @@ def prompt_and_store():
         "credentials": {
             cid: {
                 "id": cid,
-                "label": "Twilio bot",
+                "label": "Twilio account",
                 "fields": fields,
                 "created_at": int(time.time()),
             }
@@ -165,13 +277,22 @@ def prompt_and_store():
     }
     save(data)
 
-    print("\nSaved to %s (mode 0600)" % VAULT)
-    print("  bot_token: %s" % mask(tok))
-    print("\nNow run the smoke test:")
-    print("  twilio.verify_credential")
-    print("It is read_only and needs no approval. Check `missing_scopes` in")
-    print("the result — a token can authenticate perfectly and still lack the")
-    print("scope for a command you will not reach until much later.")
+    print()
+    print("Saved to %s (mode 0600)" % VAULT)
+    print("  account_sid:  %s" % account_sid)
+    print("  auth_token:   %s" % mask(auth_token))
+    if key_sid:
+        print("  api_key_sid:  %s" % key_sid)
+        print("  api_key_secret: %s" % mask(key_secret))
+        print("  -> authenticating with the API KEY")
+    else:
+        print("  -> authenticating with the ACCOUNT AUTH TOKEN")
+    print()
+    print("Now run the free smoke test — it costs nothing:")
+    print("  python tools/live_acceptance.py")
+    print("It calls verify_credential first. Check `is_trial`: on a trial")
+    print("account every send fails with error 21219 unless the destination")
+    print("is verified in the Console, which reads like a bad phone number.")
     return 0
 
 
@@ -182,7 +303,6 @@ def main():
     ap.add_argument("--remove", action="store_true",
                     help="delete the twilio entry from the vault")
     args = ap.parse_args()
-
     if args.check:
         return check()
     if args.remove:

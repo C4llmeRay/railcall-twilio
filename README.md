@@ -132,11 +132,14 @@ tools/
   stage_bundle.py       stage + preview exactly what the signature covers
   save_credential.py    vault the credential without it touching a shell
   live_acceptance.py    drive the real API — reads and pricing only by default
+  offline_probe.py      drive everything that needs NO account at all
 tests/
   test_schema.py        drives all 38 commands against a mock
   test_guards.py        51 adversarial scenarios, incl. the segment arithmetic
   test_docs.py          docs, counts and marketplace bounds vs. the manifest
   test_workflow.py      validates AND executes the companion workflow
+  test_credential.py    the vault script stores what the handler reads
+  test_gsm.py           the GSM 03.38 table, audited against the standard
 workflow/               its own marketplace listing, not part of the bundle
 LISTING.md              marketplace copy, passed via --description at publish
 ```
@@ -150,6 +153,9 @@ python tests/test_schema.py      # 38/38 commands
 python tests/test_guards.py      # 51/51 refusal scenarios
 python tests/test_docs.py
 python tests/test_workflow.py
+python tests/test_credential.py
+python tests/test_gsm.py
+python tools/offline_probe.py   # needs no Twilio account
 python tools/stage_bundle.py
 ```
 
